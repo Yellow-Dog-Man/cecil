@@ -10,6 +10,7 @@
 
 using System;
 using System.Collections.Generic;
+using System.Diagnostics.CodeAnalysis;
 using System.IO;
 using System.Threading;
 using SR = System.Reflection;
@@ -177,6 +178,22 @@ namespace Mono.Cecil {
 		}
 	}
 
+	interface ICustomMetadataWriter
+	{
+		/*
+		 * Remap TypeReference or create custom TypeRef token.
+		 *
+		 * Return true to use the returned custom 'token'.
+		 *
+		 * Return false to create a TypeRef token for 'type'
+		 * (which may have been replaced with a different TypeReference).
+		 * 
+		 * This is necessary when types are moved from one assembly to another
+		 * to either adjust the scope or replace a TypeRef with a TypeDef token.
+		 */
+		bool CreateTypeRefToken (ref TypeReference type, out MetadataToken token);
+	}
+
 	public sealed class WriterParameters {
 
 		uint? timestamp;
@@ -185,7 +202,9 @@ namespace Mono.Cecil {
 		bool write_symbols;
 		byte [] key_blob;
 		string key_container;
+#if !NET
 		SR.StrongNameKeyPair key_pair;
+#endif
 
 		public uint? Timestamp {
 			get { return timestamp; }
@@ -208,7 +227,11 @@ namespace Mono.Cecil {
 		}
 
 		public bool HasStrongNameKey {
+#if NET
+			get { return key_blob != null || key_container != null; }
+#else
 			get { return key_pair != null || key_blob != null || key_container != null; }
+#endif
 		}
 
 		public byte [] StrongNameKeyBlob {
@@ -221,10 +244,12 @@ namespace Mono.Cecil {
 			set { key_container = value; }
 		}
 
+#if !NET
 		public SR.StrongNameKeyPair StrongNameKeyPair {
 			get { return key_pair; }
 			set { key_pair = value; }
 		}
+#endif
 
 		public bool DeterministicMvid { get; set; }
 	}
@@ -264,6 +289,7 @@ namespace Mono.Cecil {
 
 		internal IReflectionImporter reflection_importer;
 		internal IMetadataImporter metadata_importer;
+		ICustomMetadataWriter custom_writer;
 
 		Collection<CustomAttribute> custom_attributes;
 		Collection<AssemblyNameReference> references;
@@ -366,6 +392,7 @@ namespace Mono.Cecil {
 		}
 
 		internal IReflectionImporter ReflectionImporter {
+			[RequiresUnreferencedCode ("The default reflection importer uses reflection to import references.")]
 			get {
 				if (reflection_importer == null)
 					Interlocked.CompareExchange (ref reflection_importer, new DefaultReflectionImporter (this), null);
@@ -381,6 +408,18 @@ namespace Mono.Cecil {
 
 				return metadata_importer;
 			}
+		}
+
+		internal void SetMetadataImporter (IMetadataImporter importer)
+		{
+			if (this.metadata_importer != null)
+				throw new InvalidOperationException ();
+			this.metadata_importer = importer;
+		}
+
+		internal ICustomMetadataWriter CustomMetadataWriter {
+			get { return custom_writer; }
+			set { custom_writer = value; }
 		}
 
 		public IAssemblyResolver AssemblyResolver {
@@ -774,22 +813,26 @@ namespace Mono.Cecil {
 		}
 
 		[Obsolete ("Use ImportReference", error: false)]
+		[RequiresUnreferencedCode ("The default reflection importer uses reflection to import references.")]
 		public TypeReference Import (Type type)
 		{
 			return ImportReference (type, null);
 		}
 
+		[RequiresUnreferencedCode ("The default reflection importer uses reflection to import references.")]
 		public TypeReference ImportReference (Type type)
 		{
 			return ImportReference (type, null);
 		}
 
 		[Obsolete ("Use ImportReference", error: false)]
+		[RequiresUnreferencedCode ("The default reflection importer uses reflection to import references.")]
 		public TypeReference Import (Type type, IGenericParameterProvider context)
 		{
 			return ImportReference (type, context);
 		}
 
+		[RequiresUnreferencedCode ("The default reflection importer uses reflection to import references.")]
 		public TypeReference ImportReference (Type type, IGenericParameterProvider context)
 		{
 			Mixin.CheckType (type);
@@ -799,22 +842,26 @@ namespace Mono.Cecil {
 		}
 
 		[Obsolete ("Use ImportReference", error: false)]
+		[RequiresUnreferencedCode ("The default reflection importer uses reflection to import references.")]
 		public FieldReference Import (SR.FieldInfo field)
 		{
 			return ImportReference (field, null);
 		}
 
 		[Obsolete ("Use ImportReference", error: false)]
+		[RequiresUnreferencedCode ("The default reflection importer uses reflection to import references.")]
 		public FieldReference Import (SR.FieldInfo field, IGenericParameterProvider context)
 		{
 			return ImportReference (field, context);
 		}
 
+		[RequiresUnreferencedCode ("The default reflection importer uses reflection to import references.")]
 		public FieldReference ImportReference (SR.FieldInfo field)
 		{
 			return ImportReference (field, null);
 		}
 
+		[RequiresUnreferencedCode ("The default reflection importer uses reflection to import references.")]
 		public FieldReference ImportReference (SR.FieldInfo field, IGenericParameterProvider context)
 		{
 			Mixin.CheckField (field);
@@ -824,22 +871,26 @@ namespace Mono.Cecil {
 		}
 
 		[Obsolete ("Use ImportReference", error: false)]
+		[RequiresUnreferencedCode ("The default reflection importer uses reflection to import references.")]
 		public MethodReference Import (SR.MethodBase method)
 		{
 			return ImportReference (method, null);
 		}
 
 		[Obsolete ("Use ImportReference", error: false)]
+		[RequiresUnreferencedCode ("The default reflection importer uses reflection to import references.")]
 		public MethodReference Import (SR.MethodBase method, IGenericParameterProvider context)
 		{
 			return ImportReference (method, context);
 		}
 
+		[RequiresUnreferencedCode ("The default reflection importer uses reflection to import references.")]
 		public MethodReference ImportReference (SR.MethodBase method)
 		{
 			return ImportReference (method, null);
 		}
 
+		[RequiresUnreferencedCode ("The default reflection importer uses reflection to import references.")]
 		public MethodReference ImportReference (SR.MethodBase method, IGenericParameterProvider context)
 		{
 			Mixin.CheckMethod (method);
@@ -898,7 +949,7 @@ namespace Mono.Cecil {
 		{
 			Mixin.CheckField (field);
 
-			if (field.Module == this && field.FieldType.Module == this)
+			if (field.Module == this)
 				return field;
 
 			CheckContext (context, this);
